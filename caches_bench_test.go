@@ -7,11 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/allegro/bigcache/v2"
+	"github.com/allegro/bigcache"
 	"github.com/coocood/freecache"
+	cache "github.com/patrickmn/go-cache"
 )
 
 const maxEntrySize = 256
+
+// Single Set
 
 func BenchmarkMapSet(b *testing.B) {
 	m := make(map[string][]byte, b.N)
@@ -24,6 +27,13 @@ func BenchmarkConcurrentMapSet(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
 		m.Store(key(i), value())
+	}
+}
+
+func BenchmarkGoCacheSet(b *testing.B) {
+	c := cache.New(5*time.Minute, 10*time.Minute)
+	for i := 0; i < b.N; i++ {
+		c.Set(key(i), value(), cache.DefaultExpiration)
 	}
 }
 
@@ -40,6 +50,8 @@ func BenchmarkBigCacheSet(b *testing.B) {
 		cache.Set(key(i), value())
 	}
 }
+
+// Single Get
 
 func BenchmarkMapGet(b *testing.B) {
 	b.StopTimer()
@@ -74,6 +86,23 @@ func BenchmarkConcurrentMapGet(b *testing.B) {
 	}
 }
 
+func BenchmarkGoCacheGet(b *testing.B) {
+	b.StopTimer()
+	c := cache.New(5*time.Minute, 10*time.Minute)
+	for i := 0; i < b.N; i++ {
+		c.Set(key(i), value(), cache.DefaultExpiration)
+	}
+
+	b.StartTimer()
+	hitCount := 0
+	for i := 0; i < b.N; i++ {
+		_, ok := c.Get(key(i))
+		if ok {
+			hitCount++
+		}
+	}
+}
+
 func BenchmarkFreeCacheGet(b *testing.B) {
 	b.StopTimer()
 	cache := freecache.NewCache(b.N * maxEntrySize)
@@ -100,6 +129,8 @@ func BenchmarkBigCacheGet(b *testing.B) {
 	}
 }
 
+// Parallel Set
+
 func BenchmarkBigCacheSetParallel(b *testing.B) {
 	cache := initBigCache(b.N)
 	rand.Seed(time.Now().Unix())
@@ -110,6 +141,20 @@ func BenchmarkBigCacheSetParallel(b *testing.B) {
 		for pb.Next() {
 			cache.Set(parallelKey(id, counter), value())
 			counter = counter + 1
+		}
+	})
+}
+
+func BenchmarkGoCacheParallel(b *testing.B) {
+	c := cache.New(5*time.Minute, 10*time.Minute)
+	rand.Seed(time.Now().Unix())
+
+	b.RunParallel(func(pb *testing.PB) {
+		id := rand.Intn(1000)
+		counter := 0
+		for pb.Next() {
+			c.Set(parallelKey(id, counter), value(), cache.DefaultExpiration)
+			counter++
 		}
 	})
 }
@@ -139,6 +184,8 @@ func BenchmarkConcurrentMapSetParallel(b *testing.B) {
 	})
 }
 
+// Parallel Get
+
 func BenchmarkBigCacheGetParallel(b *testing.B) {
 	b.StopTimer()
 	cache := initBigCache(b.N)
@@ -152,6 +199,23 @@ func BenchmarkBigCacheGetParallel(b *testing.B) {
 		for pb.Next() {
 			cache.Get(key(counter))
 			counter = counter + 1
+		}
+	})
+}
+
+func BenchmarkGoCacheGetParallel(b *testing.B) {
+	b.StopTimer()
+	c := cache.New(5*time.Minute, 10*time.Minute)
+	for i := 0; i < b.N; i++ {
+		c.Set(key(i), value(), cache.DefaultExpiration)
+	}
+
+	b.StartTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		counter := 0
+		for pb.Next() {
+			c.Get(key(counter))
+			counter++
 		}
 	})
 }
